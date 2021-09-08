@@ -3,7 +3,7 @@ pipeline {
   
   environment {
     scannerHome = tool 'SonarQubeScanner';
-    dockerPort="${env.BRANCH_NAME == "develop" ? 7300 : 7200}"
+    dockerPort="7400"
     dockerRegistryUsername="gaganshera"
     username="gaganjotsingh02"
   }
@@ -28,20 +28,18 @@ pipeline {
       }
     }
     stage('Unit Testing') {
-      when {
-        branch 'master'
-      }
       steps {
         sh 'npm test'
       }
     }
     stage('SonarQube Analysis') {
-      when {
-        branch 'develop'
-      }
       steps {
         withSonarQubeEnv('Test_Sonar') {
           sh "${scannerHome}/bin/sonar-scanner"
+        }
+        sleep 10
+        timeout(time: 30, unit: 'SECONDS') {
+            waitForQualityGate abortPipeline: true
         }
       }
     }
@@ -50,40 +48,40 @@ pipeline {
         sh "docker build -t ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:${BUILD_NUMBER} --no-cache ."
       }
     }
+    stage('PrecontainerCheck') {
+      steps {
+        sh '''
+          CONTAINER_ID=$(docker ps -a | grep "${dockerPort}" | cut -d " " -f 1)
+          if [ $CONTAINER_ID ]
+          then
+              docker rm -f $CONTAINER_ID
+          fi
+        '''
+      }
+    }
+    stage('PushtoDockerHub') {
+      steps {
+        sh "docker tag ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:${BUILD_NUMBER} ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:latest"
+        script {
+          withDockerRegistry(credentialsId: 'DockerHub', toolName: 'Test_Docker') {
+            sh "docker push ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:${BUILD_NUMBER}"
+            sh "docker push ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:latest"
+          }
+        }
+      }
+    }
     stage('Containers') {
       parallel {
-        stage('PrecontainerCheck') {
+        stage('Docker deployment') {
           steps {
-            sh '''
-              CONTAINER_ID=$(docker ps -a | grep "${dockerPort}" | cut -d " " -f 1)
-              if [ $CONTAINER_ID ]
-              then
-                  docker rm -f $CONTAINER_ID
-              fi
-            '''
+            sh "docker run -d --name c-${username}-${env.BRANCH_NAME} -p ${dockerPort}:3010 ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:latest"
           }
         }
-        stage('PushtoDockerHub') {
+        stage('Kubernetes Deployment') {
           steps {
-            sh "docker tag ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:${BUILD_NUMBER} ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:latest"
-            script {
-              withDockerRegistry(credentialsId: 'DockerHub', toolName: 'Test_Docker') {
-                sh "docker push ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:${BUILD_NUMBER}"
-                sh "docker push ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:latest"
-              }
-            }
+            sh 'kubectl apply -f k8s/deployment.yaml'
           }
         }
-      }
-    }
-    stage('Docker deployment') {
-      steps {
-        sh "docker run -d --name c-${username}-${env.BRANCH_NAME} -p ${dockerPort}:3010 ${dockerRegistryUsername}/i-${username}-${env.BRANCH_NAME}:latest"
-      }
-    }
-    stage('Kubernetes Deployment') {
-      steps {
-        sh 'kubectl apply -f k8s/deployment.yaml'
       }
     }
   }

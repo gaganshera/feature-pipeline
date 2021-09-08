@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: node-app-master-deployment
+  name: node-app-feature-deployment
   namespace: kubernetes-cluster-gaganjotsingh02
   labels:
     app: node-app
 spec:
-  replicas: 4
+  replicas: 3
   selector:
     matchLabels:
       app: node-app
@@ -17,14 +17,14 @@ spec:
     spec:
       containers:
         - name: node-app
-          image: gaganshera/i-gaganjotsingh02-master:latest
+          image: gaganshera/i-gaganjotsingh02-feature:latest
           ports:
             - name: http
               containerPort: 3010
               protocol: TCP
-          # envFrom:
-          # - configMapRef:
-          #     name: app-settings
+          envFrom:
+          - configMapRef:
+              name: app-settings
           # - secretRef:
           #     name: secret-info
           # resources:
@@ -38,14 +38,25 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: node-app-master
+  name: node-app-feature
   namespace: kubernetes-cluster-gaganjotsingh02
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app: node-app
   ports:
     - protocol: TCP
-      nodePort: 30157
-      port: 3010
+      port: 80
       targetPort: 3010
+---
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "app-settings"
+  namespace: kubernetes-cluster-gaganjotsingh02
+  labels:
+    app: "app-settings"
+data:
+  API_URL: "http://google.com"
+  ENVIRONMENT: "dev"
+  LANGUAGE: "English"
