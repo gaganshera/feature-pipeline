@@ -71,7 +71,7 @@ pipeline {
         }
       }
     }
-    stage('Containers') {
+    stage('Deployments') {
       parallel {
         stage('Docker deployment') {
           steps {
